@@ -164,5 +164,5 @@ cython_debug/
 # IRSAM custom ignores
 datasets/
 *.pt
-workdirs/
-
+output/
+*.zip

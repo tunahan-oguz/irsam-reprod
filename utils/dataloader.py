@@ -80,7 +80,8 @@ def create_dataloaders(name_im_gt_list, my_transforms=[], batch_size=1, training
         for i in range(len(name_im_gt_list)):
             gos_dataset = OnlineDataset([name_im_gt_list[i]], transform=transforms.Compose(my_transforms),
                                         eval_ori_resolution=True)
-            dataloader = DataLoader(gos_dataset, batch_size=batch_size)
+            # Enforce batch_size=1 for evaluation to handle varying original resolutions correctly
+            dataloader = DataLoader(gos_dataset, batch_size=1, num_workers=num_workers_)
 
             gos_dataloaders.append(dataloader)
             gos_datasets.append(gos_dataset)
@@ -260,6 +261,8 @@ class OnlineDataset(Dataset):
             im = im[:, :, np.newaxis]
         if im.shape[2] == 1:
             im = np.repeat(im, 3, axis=2)
+        if im.shape[2] > 3:
+            im = im[:, :, :3]
 
         edge = cv2.Canny(gt, 100, 200)
         im = torch.tensor(im.copy(), dtype=torch.float32)

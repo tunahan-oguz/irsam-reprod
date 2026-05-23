@@ -53,67 +53,67 @@ class PD_FA():
         super(PD_FA, self).__init__()
         self.nclass = nclass
         self.bins = bins
-        self.image_area_total = []
-        self.image_area_match = []
         self.FA = np.zeros(self.bins + 1)
         self.PD = np.zeros(self.bins + 1)
         self.target = np.zeros(self.bins + 1)
+        self.FA_denominator = 0.0
 
     def update(self, preds, labels):
-        W = preds.shape[3]
-        for iBin in range(self.bins + 1):
-            score_thresh = iBin * (255 / self.bins)
-            predits = np.array((preds > score_thresh).cpu()).astype('int64')
-            if W == 512:
-                predits = np.reshape(predits, (512, 512))  # 512
-                labelss = np.array((labels).cpu()).astype('int64')  # P
-                labelss = np.reshape(labelss, (512, 512))  # 512
-            elif W == 384:
-                predits = np.reshape(predits, (384, 384))  # 512
-                labelss = np.array((labels).cpu()).astype('int64')  # P
-                labelss = np.reshape(labelss, (384, 384))  # 512
-            else:
-                predits = np.reshape(predits, (512 // 2, 512 // 2))  # 512
-                labelss = np.array((labels).cpu()).astype('int64')  # P
-                labelss = np.reshape(labelss, (512 // 2, 512 // 2))  # 512
+        # preds: [B, C, H, W] or [B, H, W], labels: [B, C, H, W] or [B, H, W]
+        if len(preds.shape) == 4:
+            preds = preds.squeeze(1)
+        if len(labels.shape) == 4:
+            labels = labels.squeeze(1)
 
-            image = measure.label(predits, connectivity=2)
-            coord_image = measure.regionprops(image)
-            label = measure.label(labelss, connectivity=2)
-            coord_label = measure.regionprops(label)
+        B, H, W = preds.shape
+        self.FA_denominator += B * H * W
 
-            self.target[iBin] += len(coord_label)
-            self.image_area_total = []
-            self.image_area_match = []
-            self.distance_match = []
-            self.dismatch = []
+        preds_np = preds.cpu().numpy()
+        labels_np = labels.cpu().numpy()
 
-            for K in range(len(coord_image)):
-                area_image = np.array(coord_image[K].area)
-                self.image_area_total.append(area_image)
+        for b in range(B):
+            pred_sample = preds_np[b]
+            label_sample = labels_np[b]
 
-            for i in range(len(coord_label)):
-                centroid_label = np.array(list(coord_label[i].centroid))
-                for m in range(len(coord_image)):
-                    centroid_image = np.array(list(coord_image[m].centroid))
-                    distance = np.linalg.norm(centroid_image - centroid_label)
-                    area_image = np.array(coord_image[m].area)
-                    if distance < 3:
-                        self.distance_match.append(distance)
-                        self.image_area_match.append(area_image)
+            for iBin in range(self.bins + 1):
+                score_thresh = iBin * (255 / self.bins)
+                predits = (pred_sample > score_thresh).astype('int64')
+                labelss = label_sample.astype('int64')
 
-                        del coord_image[m]
-                        break
+                image = measure.label(predits, connectivity=2)
+                coord_image = measure.regionprops(image)
+                label = measure.label(labelss, connectivity=2)
+                coord_label = measure.regionprops(label)
 
-            self.dismatch = [x for x in self.image_area_total if x not in self.image_area_match]
-            self.FA[iBin] += np.sum(self.dismatch)
-            self.PD[iBin] += len(self.distance_match)
-        # print(len(self.image_area_total))
+                self.target[iBin] += len(coord_label)
+                image_area_total = []
+                image_area_match = []
+                distance_match = []
+
+                for K in range(len(coord_image)):
+                    area_image = np.array(coord_image[K].area)
+                    image_area_total.append(area_image)
+
+                for i in range(len(coord_label)):
+                    centroid_label = np.array(list(coord_label[i].centroid))
+                    for m in range(len(coord_image)):
+                        centroid_image = np.array(list(coord_image[m].centroid))
+                        distance = np.linalg.norm(centroid_image - centroid_label)
+                        area_image = np.array(coord_image[m].area)
+                        if distance < 3:
+                            distance_match.append(distance)
+                            image_area_match.append(area_image)
+                            del coord_image[m]
+                            break
+
+                dismatch = [x for x in image_area_total if x not in image_area_match]
+                self.FA[iBin] += np.sum(dismatch)
+                self.PD[iBin] += len(distance_match)
 
     def get(self, img_num):
-
-        Final_FA = self.FA / ((512 * 512) * img_num)  # 512
-        Final_PD = self.PD / self.target
+        denom = self.FA_denominator if self.FA_denominator > 0 else (512 * 512) * img_num
+        Final_FA = self.FA / denom
+        Final_PD = self.PD / (self.target + 1e-8)
 
         return Final_FA, Final_PD
 

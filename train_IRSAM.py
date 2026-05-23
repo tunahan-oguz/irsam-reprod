@@ -35,11 +35,9 @@ import utils.misc as misc
 def get_args_parser():
     parser = argparse.ArgumentParser('IRSAM Training', add_help=False)
 
-    parser.add_argument("--output", type=str, required=True,
+    parser.add_argument("--output", type=str, default="output",
                         help="Path to the directory where masks and checkpoints will be output")
-    parser.add_argument("--model_type", type=str, default="vit_l",
-                        help="The type of model to load, in ['vit_h', 'vit_l', 'vit_b']")
-    parser.add_argument("--checkpoint", type=str, required=True,
+    parser.add_argument("--checkpoint", type=str, default="mobile_sam.pt",
                         help="The path to the SAM checkpoint to use for mask generation.")
     parser.add_argument("--device", type=str, default="cuda",
                         help="The device to run generation on.")
@@ -58,11 +56,11 @@ def get_args_parser():
                         help='Input image size (paper: 512x512)')
     parser.add_argument('--batch_size_train', default=4, type=int,
                         help='Training batch size (paper: 4)')
-    parser.add_argument('--batch_size_valid', default=1, type=int,
+    parser.add_argument('--batch_size_valid', default=4, type=int,
                         help='Validation batch size')
-    parser.add_argument('--model_save_fre', default=10, type=int,
+    parser.add_argument('--model_save_fre', default=5, type=int,
                         help='Save checkpoint every N epochs')
-    parser.add_argument('--eval_fre', default=10, type=int,
+    parser.add_argument('--eval_fre', default=1, type=int,
                         help='Evaluate every N epochs')
 
     # Loss weights
@@ -190,6 +188,11 @@ def evaluate(net, valid_dataloaders):
 
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
+
+            # Resize predicted masks/edges to match original labels resolution for accurate evaluation
+            if masks.shape[-2:] != labels_ori.shape[-2:]:
+                masks = F.interpolate(masks, size=labels_ori.shape[-2:], mode='bilinear', align_corners=False)
+                edges = F.interpolate(edges, size=labels_ori.shape[-2:], mode='bilinear', align_corners=False)
 
             IoU_metric.update(masks.cpu(), (labels_ori / 255.).cpu().detach())
             nIoU_metric.update(masks.cpu(), (labels_ori / 255.).cpu().detach())
@@ -365,13 +368,60 @@ def warmup_lr(optimizer, epoch, warmup_epochs, base_lrs):
         param_group['lr'] = base_lrs[i] * alpha
 
 
+def rename_output_dir(old_dir, suffix):
+    if not suffix:
+        return old_dir
+    
+    logger = logging.getLogger()
+    # Close and remove all handlers to release file lock on info_*.log
+    for handler in list(logger.handlers):
+        handler.close()
+        logger.removeHandler(handler)
+        
+    new_dir = old_dir.rstrip('/') + suffix
+    try:
+        # Check if the new directory already exists, if so append a number to avoid collision
+        if os.path.exists(new_dir):
+            base_new_dir = new_dir
+            counter = 1
+            while os.path.exists(f"{base_new_dir}_{counter}"):
+                counter += 1
+            new_dir = f"{base_new_dir}_{counter}"
+            
+        os.rename(old_dir, new_dir)
+        print(f"Successfully renamed output directory to: {new_dir}")
+        return new_dir
+    except Exception as e:
+        print(f"Warning: could not rename output directory to {new_dir}: {e}")
+        return old_dir
+
+
 def main(args):
     # --- Setup output directory ---
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Format a concise but informative directory name
+    run_name = f"run_{timestamp}_{args.dataset}_lr{args.learning_rate}_wd{args.weight_decay}_bs{args.batch_size_train}_epochs{args.max_epoch_num}"
+    run_name = run_name.replace(" ", "_").replace("/", "_").replace("\\", "_")
+    
+    base_output = args.output
+    args.output = os.path.join(base_output, run_name)
+    
     os.makedirs(args.output, exist_ok=True)
     initialize_logger(args.output)
     logger = logging.getLogger()
 
     logger.info(f"Training IRSAM with args: {args}")
+
+    # Save passed arguments to args.txt
+    args_file = os.path.join(args.output, "args.txt")
+    try:
+        with open(args_file, "w") as f:
+            for k, v in vars(args).items():
+                f.write(f"{k}: {v}\n")
+        logger.info(f"Saved training arguments to {args_file}")
+    except Exception as e:
+        logger.warning(f"Could not save arguments to file: {e}")
 
     # --- Step 1: Build datasets ---
     train_datasets, valid_datasets = get_train_datasets(args.dataset)
@@ -425,6 +475,7 @@ def main(args):
     base_lrs = [pg['lr'] for pg in optimizer.param_groups]
 
     best_iou = 0.0
+    best_metrics = None
     start_epoch = args.start_epoch
 
     # --- Resume from checkpoint if specified ---
@@ -435,6 +486,7 @@ def main(args):
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
         start_epoch = ckpt.get('epoch', 0) + 1
         best_iou = ckpt.get('best_iou', 0.0)
+        best_metrics = ckpt.get('metric', None)
         if 'scheduler_state_dict' in ckpt:
             scheduler.load_state_dict(ckpt['scheduler_state_dict'])
         print(f"Resumed from epoch {start_epoch}, best IoU: {best_iou:.4f}")
@@ -446,6 +498,10 @@ def main(args):
         metric = evaluate(net, valid_dataloaders)
         print(f"Results: IoU={metric['iou']:.4f}, nIoU={metric['niou']:.4f}, "
               f"PD={metric['pd']:.8f}, FA={metric['fa']:.8f}")
+        
+        # Rename directory with evaluation scores
+        scores_suffix = f"_IoU{metric['iou']:.4f}_nIoU{metric['niou']:.4f}"
+        rename_output_dir(args.output, scores_suffix)
         return
 
     # --- Step 4: Training loop ---
@@ -488,6 +544,7 @@ def main(args):
             # Save best model
             if metric['iou'] > best_iou:
                 best_iou = metric['iou']
+                best_metrics = metric
                 save_path = os.path.join(args.output, 'best_model.pth')
                 torch.save({
                     'epoch': epoch,
@@ -527,6 +584,15 @@ def main(args):
     print(f'\nTraining complete! Final model saved: {save_path}')
     print(f'Best IoU: {best_iou:.4f}')
     logger.info(f'Training complete! Best IoU: {best_iou:.4f}')
+
+    # Rename directory with evaluation scores
+    if best_metrics is not None:
+        scores_suffix = f"_IoU{best_metrics['iou']:.4f}_nIoU{best_metrics['niou']:.4f}"
+    elif best_iou > 0.0:
+        scores_suffix = f"_IoU{best_iou:.4f}"
+    else:
+        scores_suffix = ""
+    rename_output_dir(args.output, scores_suffix)
 
 
 if __name__ == "__main__":
