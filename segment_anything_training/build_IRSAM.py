@@ -48,6 +48,6 @@ def build_sam_IRSAM(checkpoint=None):
     mobile_sam.eval()
     if checkpoint is not None:
         with open(checkpoint, "rb") as f:
-            state_dict = torch.load(f)
+            state_dict = torch.load(f, weights_only=False)
         mobile_sam.load_state_dict(state_dict, strict=False)
     return mobile_sam

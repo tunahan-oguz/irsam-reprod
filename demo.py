@@ -32,43 +32,25 @@ from utils.metric import PD_FA, ROCMetric
 from utils.loss_mask import DICE_loss
 from utils.log import initialize_logger
 import utils.misc as misc
-
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+from train_IRSAM import evaluate
 
 def get_args_parser():
     parser = argparse.ArgumentParser('HQ-SAM', add_help=False)
-
-    parser.add_argument("--output", type=str, required=True,
-                        help="Path to the directory where masks and checkpoints will be output")
-    parser.add_argument("--model_type", type=str, default="vit_l",
-                        help="The type of model to load, in ['vit_h', 'vit_l', 'vit_b']")
     parser.add_argument("--checkpoint", type=str, required=True,
                         help="The path to the SAM checkpoint to use for mask generation.")
-    parser.add_argument("--no_prompt_checkpoint", type=str, default=None,
-                        help="The path to the SAM checkpoint trained with no prompt")
     parser.add_argument("--device", type=str, default="cuda",
                         help="The device to run generation on.")
-
-    parser.add_argument('--learning_rate', default=1e-4, type=float)
-    parser.add_argument('--start_epoch', default=0, type=int)
-    parser.add_argument('--lr_drop_epoch', default=10, type=int)
-    parser.add_argument('--max_epoch_num', default=1001, type=int)
     parser.add_argument('--dataloader_size', default=[512, 512], type=list)
-    parser.add_argument('--batch_size_train', default=4, type=int)
     parser.add_argument('--batch_size_valid', default=1, type=int)
-    parser.add_argument('--model_save_fre', default=10, type=int)
-
-    parser.add_argument('--eval', action='store_true')
-    parser.add_argument('--visualize', action='store_true')
-    parser.add_argument("--restore-model", type=str,
-                        help="The path to the hq_decoder training checkpoint for evaluation")
-
+    parser.add_argument('--eval', action='store_true', default=True)
+    parser.add_argument('--restore_model', type=str, default=None)
     return parser.parse_args()
 
 
 def main(valid_datasets, args):
     # --- Step 1: Valid dataset ---
     print("--- create valid dataloader ---")
+    print("CUDA available:", torch.cuda.is_available())
     valid_im_gt_list = get_im_gt_name_dict(valid_datasets, flag="valid")
     valid_dataloaders, valid_datasets = create_dataloaders(valid_im_gt_list,
                                                            my_transforms=[
@@ -80,76 +62,12 @@ def main(valid_datasets, args):
 
     # --- Step 2: Load pretrained Network---
     net = build_sam_IRSAM(checkpoint=args.checkpoint)
-    if torch.cuda.is_available():
-        net.cuda()
+    net.cuda()
 
-    # --- Step 3: Train or Evaluate ---
-    if args.eval:
-        if args.restore_model:
-            print("restore model from:", args.restore_model)
-            if torch.cuda.is_available():
-                net.load_state_dict(torch.load(args.restore_model))
-            else:
-                net.load_state_dict(torch.load(args.restore_model, map_location="cpu"))
+    metric = evaluate(net, valid_dataloaders)
+    print(f"Results: IoU={metric['iou']:.4f}, nIoU={metric['niou']:.4f}, "
+            f"PD={metric['pd']:.8f}, FA={metric['fa']:.8f}")
 
-        evaluate(net, valid_dataloaders)
-
-def evaluate(net, valid_dataloaders):
-    net.eval()
-    metric = dict()
-
-    IoU_metric = SigmoidMetric()
-    nIoU_metric = SamplewiseSigmoidMetric(1, score_thresh=0.5)
-
-    ROC = ROCMetric(1, 10)
-    Pd_Fa = PD_FA(1, 10)
-
-    IoU_metric.reset()
-    nIoU_metric.reset()
-    Pd_Fa.reset()
-    for k in range(len(valid_dataloaders)):
-        valid_dataloader = valid_dataloaders[k]
-
-        tbar = tqdm(valid_dataloader)
-        for data_val in tbar:
-            imidx_val, inputs_val, labels_val, shapes_val, labels_ori = data_val['imidx'], data_val['image'], data_val[
-                'label'], data_val['shape'], data_val['ori_label']
-
-            if torch.cuda.is_available():
-                inputs_val = inputs_val.cuda()
-                labels_ori = labels_ori.cuda()
-
-            imgs = inputs_val.permute(0, 2, 3, 1).cpu().numpy()
-
-            batched_input = []
-            for b_i in range(len(imgs)):
-                dict_input = dict()
-                input_image = (torch.as_tensor((imgs[b_i]).astype(dtype=np.uint8), device=net.device)
-                               .permute(2, 0, 1).contiguous())
-                dict_input['image'] = input_image
-                dict_input['original_size'] = imgs[b_i].shape[:2]
-                batched_input.append(dict_input)
-
-            masks, edges = net(batched_input)
-
-            torch.cuda.synchronize()
-
-            IoU_metric.update(masks.cpu(), (labels_ori / 255.).cpu().detach())
-            nIoU_metric.update(masks.cpu(), (labels_ori / 255.).cpu().detach())
-            Pd_Fa.update(masks.cpu(), (labels_ori / 255.).cpu().detach())
-
-            FA, PD = Pd_Fa.get(len(valid_dataloader))
-            _, IoU = IoU_metric.get()
-            _, nIoU = nIoU_metric.get()
-
-            tbar.set_description('IoU:%f, nIoU:%f, PD:%.8lf, FA:%.8lf'
-                                 % (IoU, nIoU, PD[0], FA[0]))
-            
-        metric['iou'] = IoU
-        metric['niou'] = nIoU
-        metric['pd'] = PD[0]
-        metric['fa'] = FA[0]
-    return metric
 
 
 if __name__ == "__main__":
@@ -172,7 +90,7 @@ if __name__ == "__main__":
                          "im_ext": ".png",
                          "gt_ext": ".png"}
 
-    valid_datasets = [dataset_val_nuaa]
+    valid_datasets = [dataset_val_IRSTD]
 
     args = get_args_parser()
 

@@ -160,6 +160,14 @@ def evaluate(net, valid_dataloaders):
     for k in range(len(valid_dataloaders)):
         valid_dataloader = valid_dataloaders[k]
 
+        dataset_IoU_metric = SigmoidMetric()
+        dataset_nIoU_metric = SamplewiseSigmoidMetric(1, score_thresh=0.5)
+        dataset_Pd_Fa = PD_FA(1, 10)
+
+        dataset_IoU_metric.reset()
+        dataset_nIoU_metric.reset()
+        dataset_Pd_Fa.reset()
+
         tbar = tqdm(valid_dataloader, desc='Evaluating')
         for data_val in tbar:
             imidx_val = data_val['imidx']
@@ -194,16 +202,45 @@ def evaluate(net, valid_dataloaders):
                 masks = F.interpolate(masks, size=labels_ori.shape[-2:], mode='bilinear', align_corners=False)
                 edges = F.interpolate(edges, size=labels_ori.shape[-2:], mode='bilinear', align_corners=False)
 
+            # Update overall metrics
             IoU_metric.update(masks.cpu(), (labels_ori / 255.).cpu().detach())
             nIoU_metric.update(masks.cpu(), (labels_ori / 255.).cpu().detach())
             Pd_Fa.update(masks.cpu(), (labels_ori / 255.).cpu().detach())
 
-            FA, PD = Pd_Fa.get(len(valid_dataloader))
-            _, IoU = IoU_metric.get()
-            _, nIoU = nIoU_metric.get()
+            # Update dataset-specific metrics
+            dataset_IoU_metric.update(masks.cpu(), (labels_ori / 255.).cpu().detach())
+            dataset_nIoU_metric.update(masks.cpu(), (labels_ori / 255.).cpu().detach())
+            dataset_Pd_Fa.update(masks.cpu(), (labels_ori / 255.).cpu().detach())
+
+            d_FA, d_PD = dataset_Pd_Fa.get(len(valid_dataloader))
+            _, d_IoU = dataset_IoU_metric.get()
+            _, d_nIoU = dataset_nIoU_metric.get()
 
             tbar.set_description('IoU:%f, nIoU:%f, PD:%.8lf, FA:%.8lf'
-                                 % (IoU, nIoU, PD[0], FA[0]))
+                                 % (d_IoU, d_nIoU, d_PD[0], d_FA[0]))
+
+        # Get dataset name
+        try:
+            dataset_name = valid_dataloader.dataset.dataset["data_name"][0]
+        except Exception:
+            dataset_name = f"dataset_{k}"
+
+        # Print and log the dataset-specific metrics
+        log_msg = f"Dataset {dataset_name} Eval: IoU={d_IoU:.4f}, nIoU={d_nIoU:.4f}, PD={d_PD[0]:.8f}, FA={d_FA[0]:.8f}"
+        print(log_msg)
+        logger = logging.getLogger()
+        logger.info(log_msg)
+
+        # Store in metric dict
+        metric[f"{dataset_name}_iou"] = d_IoU
+        metric[f"{dataset_name}_niou"] = d_nIoU
+        metric[f"{dataset_name}_pd"] = d_PD[0]
+        metric[f"{dataset_name}_fa"] = d_FA[0]
+
+        # Calculate final overall accumulated metrics to populate return dict
+        FA, PD = Pd_Fa.get(len(valid_dataloader))
+        _, IoU = IoU_metric.get()
+        _, nIoU = nIoU_metric.get()
 
         metric['iou'] = IoU
         metric['niou'] = nIoU
