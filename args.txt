@@ -1,0 +1,20 @@
+output: output/run_20260524_111612_all_lr0.0001_wd0.01_bs4_epochs500
+checkpoint: mobile_sam.pt
+device: cuda
+learning_rate: 0.0001
+weight_decay: 0.01
+start_epoch: 0
+max_epoch_num: 500
+warmup_epochs: 5
+dataloader_size: [512, 512]
+batch_size_train: 4
+batch_size_valid: 4
+model_save_fre: 5
+eval_fre: 1
+dice_weight: 1.0
+bce_weight: 1.0
+edge_weight: 1.0
+dataset: all
+resume: None
+eval: False
+visualize: False

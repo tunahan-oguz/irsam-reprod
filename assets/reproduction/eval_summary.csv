@@ -1,0 +1,4 @@
+model,source,dataset,best_iou,best_iou_epoch,best_niou,best_niou_epoch,best_pd,best_pd_epoch,best_fa,best_fa_epoch
+IRSAM,Reproduction,NUDT,0.8859,72,0.9061,78,0.99438202,31,1.84e-06,10
+IRSAM,Reproduction,IRSTD,0.6965,118,0.6462,65,0.96283784,292,6.81e-06,26
+IRSAM,Reproduction,Sirstv2_512,0.8026,18,0.804,18,1.0,15,5.29e-06,80

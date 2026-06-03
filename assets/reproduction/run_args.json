@@ -1,0 +1,22 @@
+{
+  "batch_size_train": "4",
+  "batch_size_valid": "4",
+  "bce_weight": "1.0",
+  "checkpoint": "mobile_sam.pt",
+  "dataloader_size": "[512, 512]",
+  "dataset": "all",
+  "device": "cuda",
+  "dice_weight": "1.0",
+  "edge_weight": "1.0",
+  "eval": "False",
+  "eval_fre": "1",
+  "learning_rate": "0.0001",
+  "max_epoch_num": "500",
+  "model_save_fre": "5",
+  "output": "output/run_20260524_111612_all_lr0.0001_wd0.01_bs4_epochs500",
+  "resume": "None",
+  "start_epoch": "0",
+  "visualize": "False",
+  "warmup_epochs": "5",
+  "weight_decay": "0.01"
+}
