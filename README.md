@@ -132,9 +132,9 @@ training log. FA is reported as the minimum observed value because lower false a
 
 | Model | Source | Dataset | IoU ↑ | nIoU ↑ | PD ↑ | FA ↓ |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| IRSAM | Paper | NUDT | - | - | - | - |
+| IRSAM | Paper | NUDT | 0.9259 | 0.9329 | 0.9887 | 0.00000694 |
 | IRSAM | Reproduction | NUDT | 0.8859 (epoch 72) | 0.9061 (epoch 78) | 0.9944 (epoch 31) | 0.00000184 (epoch 10) |
-| IRSAM | Paper | IRSTD | - | - | - | - |
+| IRSAM | Paper | IRSTD | 0.7369 | 0.6897 | 96.92 | 0.00000755 |
 | IRSAM | Reproduction | IRSTD | 0.6965 (epoch 118) | 0.6462 (epoch 65) | 0.9628 (epoch 292) | 0.00000681 (epoch 26) |
-| IRSAM | Paper | Sirstv2_512 | - | - | - | - |
+| IRSAM | Paper | Sirstv2_512 | 0.8078 | 0.7839 | 0.9953 | 0.00000395 |
 | IRSAM | Reproduction | Sirstv2_512 | 0.8026 (epoch 18) | 0.8040 (epoch 18) | 1.0000 (epoch 15) | 0.00000529 (epoch 80) |
