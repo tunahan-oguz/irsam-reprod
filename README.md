@@ -3,7 +3,8 @@
 This repository is set up to reproduce IRSAM training and evaluation. The training configuration in
 `train_IRSAM.py` follows the hyperparameters reported in the paper.
 
-Even though I save best metrics seperately I could not match any of the described metric in the paper. 
+Even though I save best metrics seperately I could not match any of the claimed success in the paper for NUDT and IRSTD datasets. I was down by 4% in these two datasets.
+For Sirstv2_512 the work seems reproducable.
 
 ## Repository Layout
 
