@@ -1,8 +1,9 @@
 # IRSAM Reproduction
 
 This repository is set up to reproduce IRSAM training and evaluation. The training configuration in
-`train_IRSAM.py` follows the hyperparameters reported in the paper, and the log tracing utility in
-`tools/trace_training_log.py` converts training logs into CSV metrics, plots, and a benchmark table.
+`train_IRSAM.py` follows the hyperparameters reported in the paper.
+
+Even though I save best metrics seperately I could not match any of the described metric in the paper. 
 
 ## Repository Layout
 
@@ -46,7 +47,7 @@ python3 prepare_datasets.py
 
 ## Training Configuration
 
-The default reproduction hyperparameters are extracted from `train_IRSAM.py`:
+The default reproduction hyperparameters are extracted from original paper:
 
 | Setting | Value |
 | --- | ---: |
@@ -86,36 +87,6 @@ python3 train_IRSAM.py \
   --dataset all \
   --eval
 ```
-
-## Log Tracing
-
-Training creates `info_*.log` files. Trace a log with:
-
-```bash
-python3 tools/trace_training_log.py info_2026_05_24_11_16_12.log
-```
-
-The tracer writes:
-
-| Artifact | Purpose |
-| --- | --- |
-| `assets/reproduction/train_metrics.csv` | Per-epoch training loss and learning rate |
-| `assets/reproduction/eval_metrics.csv` | Per-dataset evaluation metrics |
-| `assets/reproduction/aggregate_eval_metrics.csv` | Aggregate evaluation metrics logged per epoch |
-| `assets/reproduction/eval_summary.csv` | Best reproduction metrics by dataset |
-| `assets/reproduction/reproduction_results.md` | Markdown benchmark table |
-| `assets/reproduction/training_loss.svg` | Training loss curves |
-| `assets/reproduction/learning_rate.svg` | Learning-rate curve |
-| `assets/reproduction/eval_iou_by_dataset.svg` | Dataset IoU curves |
-
-To fill the paper rows, pass a CSV or JSON file with paper-author claims:
-
-```bash
-python3 tools/trace_training_log.py info_2026_05_24_11_16_12.log \
-  --paper-results paper_results.csv
-```
-
-Expected CSV columns are `dataset,iou,niou,pd,fa`. JSON should map dataset names to metric objects.
 
 ## Training Metrics
 
